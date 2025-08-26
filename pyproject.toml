@@ -1,0 +1,37 @@
+[project]
+name = "vaultxfer"
+dynamic = ["version"]
+description = "SSH/SFTP file transfer and synchronization CLI with atomic operations"
+authors = [
+    { name = "Bryan Charles", email = "bryancharlesdnz@gmail.com" }
+]
+keywords = ["ssh", "sftp", "file-transfer", "synchronization", "cli"]
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "paramiko>=2.11,<4.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/agace/vaultxfer"
+Documentation = "https://github.com/agace/vaultxfer#readme"
+Repository = "https://github.com/agace/vaultxfer"
+Issues = "https://github.com/agace/vaultxfer/issues"
+
+[tool.setuptools_scm]
+version_scheme = "release-branch-semver"
+local_scheme = "no-local-version"
+
+[tool.setuptools]
+packages = { find = { where = ["."] } }
+
+[tool.setuptools.package-dir]
+vaultxfer = "vaultxfer"
+
+[project.scripts]
+vaultxfer = "vaultxfer.cli:main"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel", "setuptools-scm"]
+build-backend = "setuptools.build_meta"

@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*$py.class
+
+dist/
+vaultxfer.egg-info/
+
+pip-log.txt
+pip-delete-this-directory.txt
+
+*.egg-info/
+*.egg
+
