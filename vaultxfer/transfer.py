@@ -3,7 +3,18 @@
 import os
 import fnmatch
 import stat
+from datetime import datetime
 from pathlib import Path
+from typing import Dict, Tuple, Optional, List
+from vaultxfer.utils import (
+     human_bytes,
+     sha256_file,
+     format_dry_run_header,
+     format_dry_run_footer,
+     format_dry_run_section,
+     format_dry_run_item,
+     format_dry_run_action,
+)
 
 def atomic_upload(sftp, local_path, remote_path):
     if remote_path.endswith("/") or os.path.basename(remote_path) == "":
@@ -54,7 +65,7 @@ def atomic_upload(sftp, local_path, remote_path):
                     try:
                         sftp.remove(tmp)
                     except Exception:
-                        pass
+                       pass
                     raise RuntimeError(f"Failed to move uploaded temp file to final path: rename error: {rename_exc}; fallback put error: {put_exc}")
 
         print(f"Uploaded {local_path} to {remote_path}")
@@ -64,7 +75,7 @@ def atomic_upload(sftp, local_path, remote_path):
         print(f"Error: Local file not found: {local_path}")
     except Exception as e:
         try:
-            sftp.remove(tmp)
+           sftp.remove(tmp)
         except Exception:
             pass
         print(f"Error uploading {local_path} to {remote_path}: {str(e)}")
@@ -214,3 +225,59 @@ def sync_bidirectional(sftp, local_dir, remote_dir, recursive=False, include=Non
             else:
                 atomic_download(sftp, rfile, lfile)
 
+def dry_run_upload(local_path:str, remote_path:str) -> None:
+    if remote_path.endswith("/") or os.path.basename(remote_path) == "":
+        remote_path = os.path.join(remote_path, os.path.basename(local_path))
+
+    tmp_path = remote_path + ".tmp"
+
+    try:
+      file_size = os.path.getsize(local_path)
+      file_hash = sha256_file(local_path)
+      mod_time = datetime.fromtimestamp(os.path.getmtime(local_path))
+      
+      format_dry_run_header("File Upload", f"{local_path} → {remote_path}")
+      
+      format_dry_run_section("File Details")
+      format_dry_run_item("Local path", local_path)
+      format_dry_run_item("Remote path", remote_path)
+      format_dry_run_item("File size", human_bytes(file_size))
+      format_dry_run_item("SHA-256", file_hash)
+      format_dry_run_item("Modified", mod_time.strftime('%Y-%m-%d %H:%M:%S'))
+      
+      format_dry_run_section("Operation Plan")
+      format_dry_run_action(f"Create temporary file: {tmp_path}")
+      format_dry_run_action(f"Transfer data to temporary file")
+      format_dry_run_action(f"Verify SHA-256 hash: {file_hash[:16]}...")
+      format_dry_run_action(f"Atomically rename: {tmp_path} → {remote_path}")
+      format_dry_run_footer()
+      
+    except FileNotFoundError:
+      format_dry_run_header("File Upload", f"{local_path} → {remote_path}")
+      format_dry_run_section("Error")
+      format_dry_run_item("Status", "FAILED")
+      format_dry_run_item("Reason", f"Local file not found: {local_path}")
+      format_dry_run_footer()
+    except Exception as e:
+      format_dry_run_header("File Upload", f"{local_path} → {remote_path}")
+      format_dry_run_section("Error")
+      format_dry_run_item("Status", "FAILED")
+      format_dry_run_item("Reason", f"Error simulating upload: {e}")
+      format_dry_run_footer()
+
+def dry_run_download(remote_path: str, local_path: str) -> None:
+    if os.path.isdir(local_path):
+        local_path = os.path.join(local_path, os.path.basename(remote_path))
+    
+    tmp_path = local_path + ".tmp"
+    
+    format_dry_run_header("File Download", f"{remote_path} → {local_path}")
+    
+    format_dry_run_section("Operation Plan")
+    format_dry_run_action(f"Create temporary file: {tmp_path}")
+    format_dry_run_action(f"Transfer data to temporary file")
+    format_dry_run_action(f"Atomically rename: {tmp_path} → {local_path}")
+    
+    format_dry_run_section("Note")
+    format_dry_run_item("Information", "Remote file details cannot be determined in dry-run mode")
+    format_dry_run_footer()

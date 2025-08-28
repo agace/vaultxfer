@@ -12,13 +12,14 @@ from vaultxfer.transfer import (
     sync_push,
     sync_pull,
     sync_bidirectional,
+    dry_run_upload,
+    dry_run_download,
 )
 
 class error_formatter(argparse.ArgumentParser):
     def error(self, message):
         if len(sys.argv) == 1:
           self.print_help(sys.stderr)
-          #args = {'message': message}
           self.exit(2) 
         else:
           self.print_usage(sys.stderr)
@@ -48,7 +49,6 @@ def parse_target(target: str) -> tuple[str, str]:
     raise ValueError("Target must be in format user@host")
 
 def main():
-    # create main parser with enhanced formatting
     parser = error_formatter(
         description=textwrap.dedent("""
             VaultXfer - Secure File Transfer and Synchronization Tool
@@ -79,11 +79,13 @@ def main():
                              help="Custom known_hosts file path")
     global_group.add_argument("--timeout", type=int, default=30, metavar="SECONDS",
                              help="Connection timeout in seconds (default: %(default)d)")
-    global_group.add_argument("-v", "--version", action="version", version="%(prog)s 1.0",
+    global_group.add_argument("--dry-run", action="store_true",
+                             help="Simulate operations without making changes")
+    global_group.add_argument("-v", "--version", action="version", version=f'%(prog)s 0.1.1',
                              help="Show program version")
     
     # positional arguments
-    parser.add_argument("target", help="Remote target in format [user@]host")
+    parser.add_argument("target", help="Remote target in format user@host")
     
     # subcommands
     subparsers = parser.add_subparsers(
@@ -93,7 +95,7 @@ def main():
         description="For detailed help on each command, use: vaultxfer TARGET COMMAND --help"
     )
     
-    # PUT command
+    # put command
     put_parser = subparsers.add_parser(
         "put", 
         help="Upload file to remote host",
@@ -103,7 +105,7 @@ def main():
     put_parser.add_argument("local", help="Local source file path")
     put_parser.add_argument("remote", help="Remote destination path")
     
-    # GET command
+    # get command
     get_parser = subparsers.add_parser(
         "get", 
         help="Download file from remote host",
@@ -113,7 +115,7 @@ def main():
     get_parser.add_argument("remote", help="Remote source file path")
     get_parser.add_argument("local", help="Local destination path")
     
-    # SYNC command
+    # sync command
     sync_parser = subparsers.add_parser(
         "sync", 
         help="Synchronize directories",
@@ -153,40 +155,57 @@ def main():
             print("\nOperation cancelled")
             sys.exit(1)
     
-    # establish connection
     try:
-        with get_ssh_client(
-            host=host,
-            port=args.port,
-            user=user,
-            keyfile=args.identity,
-            password=password,
-            known_hosts=args.known_hosts,
-            timeout=args.timeout,
-        ) as ssh:
-            with get_sftp(ssh) as sftp:
-                if args.cmd == "put":
-                    atomic_upload(sftp, args.local, args.remote)
-                elif args.cmd == "get":
-                    atomic_download(sftp, args.remote, args.local)
-                elif args.cmd == "sync":
-                    sync_args = {
-                        'recursive': args.recursive,
-                        'include': args.include,
-                        'exclude': args.exclude,
-                    }
-                    
-                    if args.push:
-                        sync_push(sftp, args.local_dir, args.remote_dir, **sync_args)
-                    elif args.pull:
-                        sync_pull(sftp, args.remote_dir, args.local_dir, **sync_args)
-                    elif args.bidirectional:
-                        sync_bidirectional(sftp, args.local_dir, args.remote_dir, **sync_args)
-    
-    except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
+        if args.dry_run:
+            # dry-run mode doesn't require a real connection for most operations
+            print(f"[DRY RUN] Simulating operations for {user}@{host}:{args.port}")
 
+            if args.cmd == "put":
+                dry_run_upload(args.local, args.remote)
+            elif args.cmd == "get":
+                dry_run_download(args.remote, args.local)
+            elif args.cmd == "sync":
+                sync_args = {
+                    'recursive': args.recursive,
+                    'include': args.include,
+                    'exclude': args.exclude,
+                }
+                if args.push:
+                    dry_run_sync_push(args.local_dir, args.remote_dir, **sync_args)
+                elif args.pull:
+                    dry_run_sync_pull(args.remote_dir, args.local_dir, **sync_args)
+                elif args.bidirectional:
+                    dry_run_sync_bidirectional(args.local_dir, args.remote_dir, **sync_args)
+        else:
+            with get_ssh_client(
+                host=host,
+                port=args.port,
+                user=user,
+                keyfile=args.identity,
+                password=password,
+                known_hosts=args.known_hosts,
+                timeout=args.timeout,
+            ) as ssh:
+                with get_sftp(ssh) as sftp:
+                    if args.cmd == "put":
+                        atomic_upload(sftp, args.local, args.remote)
+                    elif args.cmd == "get":
+                        atomic_download(sftp, args.remote, args.local)
+                    elif args.cmd == "sync":
+                        sync_args = {
+                            'recursive': args.recursive,
+                            'include': args.include,
+                            'exclude': args.exclude,
+                        }
+                        if args.push:
+                            sync_push(sftp, args.local_dir, args.remote_dir, **sync_args)
+                        elif args.pull:
+                            sync_pull(sftp, args.remote_dir, args.local_dir, **sync_args)
+                        elif args.bidirectional:
+                            sync_bidirectional(sftp, args.local_dir, args.remote_dir, **sync_args)
+    except Exception as e:
+        print(f"error: {e}", file=sys.stderr)
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
