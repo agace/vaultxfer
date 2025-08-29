@@ -20,13 +20,9 @@ def atomic_upload(sftp, local_path, remote_path):
     if remote_path.endswith("/") or os.path.basename(remote_path) == "":
         remote_path = os.path.join(remote_path, os.path.basename(local_path))
 
-    if os.path.basename(remote_path) == "":
-        remote_path = remote_path + ".tmp"
-
-    tmp = remote_path + f".tmp"
+    tmp = remote_path + ".tmp"
 
     try:
-        # ensure remote parent directories exist
         remote_dir = os.path.dirname(remote_path)
         if remote_dir and remote_dir != ".":
             try:
@@ -45,37 +41,31 @@ def atomic_upload(sftp, local_path, remote_path):
 
         try:
             sftp.rename(tmp, remote_path)
+            print(f"Uploaded {local_path} to {remote_path}")
+            return
+
         except Exception as rename_exc:
             try:
                 sftp.remove(remote_path)
-            except Exception:
-                pass
-
-            try:
                 sftp.rename(tmp, remote_path)
+                print(f"Uploaded {local_path} to {remote_path}")
+                return
+
             except Exception:
                 try:
-                    try:
-                        sftp.remove(tmp)
-                    except Exception:
-                        pass
                     sftp.put(local_path, remote_path)
+                    print(f"Uploaded {local_path} to {remote_path} (non-atomic)")
                     return
                 except Exception as put_exc:
-                    try:
-                        sftp.remove(tmp)
-                    except Exception:
-                       pass
-                    raise RuntimeError(f"Failed to move uploaded temp file to final path: rename error: {rename_exc}; fallback put error: {put_exc}")
+                    raise RuntimeError(f"File upload failed. Please verify file permissions and that the path is valid.")
 
-        print(f"Uploaded {local_path} to {remote_path}")
     except PermissionError:
         print(f"Error: Permission denied for remote path: {remote_path}")
     except FileNotFoundError:
         print(f"Error: Local file not found: {local_path}")
     except Exception as e:
         try:
-           sftp.remove(tmp)
+            sftp.remove(tmp)
         except Exception:
             pass
         print(f"Error uploading {local_path} to {remote_path}: {str(e)}")
@@ -83,35 +73,42 @@ def atomic_upload(sftp, local_path, remote_path):
 def atomic_download(sftp, remote_path, local_path):
     if os.path.isdir(local_path):
         local_path = os.path.join(local_path, os.path.basename(remote_path))
-
+    
     if local_path.endswith("/") or os.path.basename(local_path) == "":
         local_path = os.path.join(local_path, os.path.basename(remote_path))
-
+    
     if os.path.basename(local_path) == "":
         local_path = local_path + ".tmp"
-
+    
     tmp = local_path + ".tmp"
-
+    
     try:
         local_dir = os.path.dirname(local_path)
         if local_dir and local_dir != ".":
             os.makedirs(local_dir, exist_ok=True)
-
         sftp.get(remote_path, tmp)
+        
         os.replace(tmp, local_path)
         print(f"Downloaded {remote_path} to {local_path}")
-
+        
     except FileNotFoundError:
-        print(f"Error: Remote file not found: {remote_path}")
-    except PermissionError:
-        print(f"Error: Permission denied for remote file: {remote_path}")
-    except Exception as e:
-        print(f"Error downloading {remote_path} to {local_path}: {str(e)}")
         try:
             os.remove(tmp)
         except:
             pass
-        raise RuntimeError(f"Failed to download {remote_path} to {local_path}: {e}")
+        print(f"Error: Remote file not found: {remote_path}")
+    except PermissionError:
+        try:
+            os.remove(tmp)
+        except:
+            pass
+        print(f"Error: Permission denied for remote file: {remote_path}")
+    except Exception as e:
+        try:
+            os.remove(tmp)
+        except:
+            pass
+        print(f"Error downloading {remote_path} to {local_path}: {str(e)}")
 
 def list_local(path):
     results = {}
@@ -331,17 +328,6 @@ def dry_run_sync_push(local_dir: str, remote_dir:str, recursive: bool = False, i
 
                 if not should_include:
                     continue
-				 
-               	''' 
-                if include:
-                    should_include = any(fnmatch.fnmatch(fname, pat) for pat in include) or any(fnmatch.fnmatch(rel_path, pat) for pat in include)
-                
-                if exclude and should_include:
-                    should_include = not (any(fnmatch.fnmatch(fname, pat) for pat in exclude) or any(fnmatch.fnmatch(rel_path, pat) for pat in exclude))
-                
-                if not should_include:
-                    continue
-               	''' 
 
                 transferred_count += 1
                 if transferred_count <= 10:  # first 10 files
