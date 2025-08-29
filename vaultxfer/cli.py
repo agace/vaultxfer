@@ -14,6 +14,7 @@ from vaultxfer.transfer import (
     sync_bidirectional,
     dry_run_upload,
     dry_run_download,
+    dry_run_sync_push,
 )
 
 class error_formatter(argparse.ArgumentParser):

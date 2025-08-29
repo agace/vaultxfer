@@ -145,10 +145,17 @@ def sync_push(sftp, local_dir, remote_dir, recursive=False, include=None, exclud
     local_files = list_local(local_dir)
     for rel, meta in local_files.items():
         fname = os.path.basename(rel)
-        if include and not any(fnmatch.fnmatch(fname, pat) for pat in include):
-            continue
-        if exclude and any(fnmatch.fnmatch(fname, pat) for pat in exclude):
-            continue
+
+        should_include = True
+        if include:
+            matched = any(fnmatch.fnmatch(fname, pat) or fnmatch.fnmatch(rel_path, pat) for pat in include)
+            should_include = matched
+
+        if should_include and exclude:
+            excluded = any(fnmatch.fnmatch(fname, pat) or fnmatch.fnmatch(rel_path, pat) for pat in exclude)
+            if excluded:
+                should_include = False
+
         lfile = os.path.join(local_dir, rel)
         rfile = os.path.join(remote_dir, rel)
 
@@ -280,4 +287,76 @@ def dry_run_download(remote_path: str, local_path: str) -> None:
     
     format_dry_run_section("Note")
     format_dry_run_item("Information", "Remote file details cannot be determined in dry-run mode")
+    format_dry_run_footer()
+
+def dry_run_sync_push(local_dir: str, remote_dir:str, recursive: bool = False, include: Optional[List[str]] = None, exclude: Optional[List[str]] = None) -> None:
+    format_dry_run_header("Synchronization push", f"{local_dir} → {remote_dir}")
+
+    format_dry_run_section("Operation Parameters")
+    format_dry_run_item("Direction", f"{local_dir} → {remote_dir}")
+    format_dry_run_item("Recursive", str(recursive))
+
+    if include:
+        format_dry_run_item("Include patterns", ", ".join(include))
+
+    if exclude:
+        format_dry_run_item("Exclude patterns", ", ".join(exclude))
+    
+    try:
+        local_files = list_local(local_dir)
+        file_count = len(local_files)
+        total_size = sum(size for _, size, _ in local_files.values())
+        
+        format_dry_run_section("File Analysis")
+        format_dry_run_item("Files found", str(file_count))
+        format_dry_run_item("Total size", human_bytes(total_size))
+        
+        if file_count > 0:
+            format_dry_run_section("Files to be transferred")
+            transferred_count = 0
+            for rel_path, (mode, size, mtime) in local_files.items():
+                fname = os.path.basename(rel_path)
+                    
+                # apply include/exclude patterns 
+                should_include = True
+
+                if include:
+                    matched = any(fnmatch.fnmatch(fname, pat) or fnmatch.fnmatch(rel_path, pat) for pat in include)
+                    should_include = matched
+
+                if should_include and exclude:
+                    excluded = any(fnmatch.fnmatch(fname, pat) or fnmatch.fnmatch(rel_path, pat) for pat in exclude)
+                    if excluded:
+                        should_include = False
+
+                if not should_include:
+                    continue
+				 
+               	''' 
+                if include:
+                    should_include = any(fnmatch.fnmatch(fname, pat) for pat in include) or any(fnmatch.fnmatch(rel_path, pat) for pat in include)
+                
+                if exclude and should_include:
+                    should_include = not (any(fnmatch.fnmatch(fname, pat) for pat in exclude) or any(fnmatch.fnmatch(rel_path, pat) for pat in exclude))
+                
+                if not should_include:
+                    continue
+               	''' 
+
+                transferred_count += 1
+                if transferred_count <= 10:  # first 10 files
+                    format_dry_run_item(rel_path, human_bytes(size), 2)
+            
+            if transferred_count > 10:
+                format_dry_run_item(f"... and {transferred_count - 10} more", "", 2)
+            elif transferred_count == 0:
+                format_dry_run_item("No files match the filter criteria", "", 2)
+            else:
+                format_dry_run_item(f"\nTotal files to transfer", str(transferred_count), 2)
+    
+    except Exception as e:
+        format_dry_run_section("Error")
+        format_dry_run_item("Status", "FAILED")
+        format_dry_run_item("Reason", f"Error scanning local directory: {e}")
+    
     format_dry_run_footer()
